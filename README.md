@@ -10,7 +10,7 @@
   - [자료구조]()
   - [알고리즘]()
 - Chapter 2. Language
-  - [Java]()
+  - [Java](https://github.com/Hyun0828/CS/tree/main/Language/Java)
 - Chapter 3. 기술
   - [Spring]()
   - [Redis]()
