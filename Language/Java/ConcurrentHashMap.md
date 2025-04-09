@@ -2,7 +2,7 @@ Java에서 일반적인 HashMap은 멀티스레드 환경에서 Thread-Safe하�
 
 ConcurrentHashMap은 내부적으로 분할 잠금 메커니즘(Lock Stripping)과 CAS(Compare-And-Swap) 같은 비동기적인 동시성 제어 기법을 사용하여 여러 스레드가 동시에 데이터를 읽고 쓰는 상황에서도 안전하게 동작한다.
 
-**ConcurrentHashMap이란?**
+## ConcurrentHashMap이란?
 
 - 자바의 동시성 컬렉션 클래스 중 하나로, 멀티 스레드 환경에서 안전하게 사용할 수 있다.
 
@@ -37,21 +37,21 @@ final V putVal(K key, V value, boolean onlyIfAbsent) {
 - putVal은 private 메소드로 onlyIfAbsent 인자는 키가 없을 때만 값을 삽입할 지 키가 있더라도 무조건 삽입할 지 결정한다.
 - 따라서 put 메소드를 사용하면 기존 값이 업데이트되며 putIfAbsent 메소드를 사용하면 기존 값이 없을 때만 값을 삽입한다.
 
-**CAS(Compare-And-Swap)란 무엇인가?**
+## CAS(Compare-And-Swap)란 무엇인가?
 
 - CAS는 비동기적 동시성 제어 기법 중 하나로 여러 스레드가 동시에 데이터를 수정하려고 할 때 데이터의 일관성을 보장하는 방법이다. CAS는 원자적(atomic) 연산이기 때문에 안전하게 데이터를 읽고 쓸 수 있다.
 - CAS는 메모리에 저장된 기존 값과 각 스레드의 스택에 저장된 값을 비교하여 같으면 수정하는 방법이다.
 
-**CAS 연산은 HW 수준에서 원자적으로 수행된다**
+## CAS 연산은 HW 수준에서 원자적으로 수행된다
 
 - 현대 CPU는 CAS 연산을 지원하는 명령어들이 있는데 CAS 연산은 원자적 연산이기 때문에 연산이 실행되는 동안 다른 어떤 연산(다른 스레드나 프로세스)도 해당 메모리 주소에 접근할 수 없다. 명령어가 끊기지 않고 한 번에 수행되기 때문에 메모리 주소를 읽고, 비교하고, 값을 교체하는 과정이 한 번에 이루어진다. 따라서 CAS 연산은 완전히 수행되거나 전혀 수행되지 않는 2가지 상태만을 가진다.
 
-**CAS가 중요한 이유**
+## CAS가 중요한 이유
 
 - Lock을 사용하지 않아 DeadLock이 발생하지 않는다.
 - 높은 성능 및 비동기적 처리
 
-**ConcurrentHashMap에선 CAS 기법을 어떻게 사용하고 있을까?**
+## ConcurrentHashMap에선 CAS 기법을 어떻게 사용하고 있을까?
 
 - putVal 메소드의 일부를 확인해보자.
 
@@ -99,7 +99,7 @@ public final native boolean compareAndSetReference(Object o, long offset,
 
 **→ 쉽게 생각하면 자리가 비어 있다면 내 물건을 두고 다른 사람이 먼저 물건을 두어 자리가 비어 있지 않다면 물건을 두지 않는 것이다.**
 
-**ConcurrentHashMap의 putVal 메소드 분석**
+## ConcurrentHashMap의 putVal 메소드 분석
 
 ```java
 if (key == null || value == null) throw new NullPointerException();
@@ -230,7 +230,7 @@ for (Node<K,V>[] tab = table;;) {
 - 이 코드가 버킷의 노드 숫자가 기본값인 8개 이상이 되면 Red Black Tree 구조로 바꾸는 부분이다.
 - addCount는 해시 테이블의 전체 노드 숫자를 증가시키고 특정 조건에서 테이블을 리사이징한다.
 
-**결론**
+## 결론
 
 - 버킷이 비어있으면 CAS로 경쟁 없이 바로 삽입하는데 락을 걸지 않아 빠르다.
 - 버킷이 존재하고 key도 있고 onlyIfAbsent(putIfAbsent)인 경우에는 락 없이 기존 값을 반환한다.
