@@ -188,7 +188,7 @@ for (Node<K,V>[] tab = table;;) {
                         }
                     }
                 }
-                // RedBlack Tree 구조일 때
+                // RedBlack Tree 구조일 때 (TreeBin 구조일 때)
                 else if (f instanceof TreeBin) {
                     Node<K,V> p;
                     binCount = 2;
@@ -227,7 +227,7 @@ for (Node<K,V>[] tab = table;;) {
 }
 ```
 
-- 이 코드가 버킷의 노드 숫자가 기본값인 8개 이상이 되면 Red Black Tree 구조로 바꾸는 부분이다.
+- 이 코드가 버킷의 노드 숫자가 기본값인 8개 이상이 되면 Red Black Tree 구조 (TreeBin 구조)로 바꾸는 부분이다.
 - addCount는 해시 테이블의 전체 노드 숫자를 증가시키고 특정 조건에서 테이블을 리사이징한다.
 
 ## 결론
