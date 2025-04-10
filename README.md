@@ -16,6 +16,6 @@
   - [Redis](https://github.com/Hyun0828/CS/tree/main/Stack/Redis)
   - [JPA](https://github.com/Hyun0828/CS/tree/main/Stack/JPA)
   - [Docker](https://github.com/Hyun0828/CS/tree/main/Stack/Docker)
-- Chapter 4. 프로젝트 고민
+- Chapter 4. 프로젝트
   - [복숭아멘토]()
   - [LinguaTalk]()
