@@ -17,5 +17,5 @@
   - [JPA](https://github.com/Hyun0828/CS/tree/main/Stack/JPA)
   - [Docker](https://github.com/Hyun0828/CS/tree/main/Stack/Docker)
 - Chapter 4. 프로젝트
-  - [복숭아멘토]()
-  - [LinguaTalk]()
+  - [복숭아멘토](https://github.com/Hyun0828/CS/tree/main/Project/PeachMentor)
+  - [LinguaTalk](https://github.com/Hyun0828/CS/tree/main/Project/LinguaTalk)
