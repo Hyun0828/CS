@@ -19,3 +19,4 @@
 - Chapter 4. 프로젝트
   - [복숭아멘토](https://github.com/Hyun0828/CS/tree/main/Project/PeachMentor)
   - [LinguaTalk](https://github.com/Hyun0828/CS/tree/main/Project/LinguaTalk)
+    - [@Transactional 줄이기](https://github.com/Hyun0828/CS/blob/main/Project/LinguaTalk/%40Transactional%20%EC%A4%84%EC%9D%B4%EA%B8%B0.md)
