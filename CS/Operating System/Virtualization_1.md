@@ -6,7 +6,7 @@
   - [제한된 연산](#제한된-연산)
   - [프로세스-간-전환](#프로세스-간-전환)
 - [Scheduling](#Scheduling)
-  - [선입선출(First In First Out)](#선입선출-first-in-first-out-fifo)
+  - [선입선출(First In First Out)](#선입선출-first-in-first-out)
   - [최단 작업 우선(Shortest Job First, SJF)](#최단-작업-우선-shortest-job-first-sjf)
   - [최단 잔여시간 우선 (Shortest Time-to-Completion First, STCF or PSJF)](#최단-잔여시간-우선-shortest-time-to-completion-first-stcf-or-psjf)
   - [응답 시간](#응답-시간)
