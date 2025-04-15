@@ -1,7 +1,7 @@
 # Virtualization_1
 
 # 목차
-- [Processes](#4.-processes)
+- [Processes](#4-processes)
 - [Limited Direct Execution](#limited-direct-execution)
   - [제한된 연산](#제한된-연산)
   - [프로세스 간 전환](#프로세스-간-전환)
