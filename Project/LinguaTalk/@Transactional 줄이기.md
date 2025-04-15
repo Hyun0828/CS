@@ -20,7 +20,11 @@ MySQL에서 set_option은 말 그대로 option을 setting하는 모든 쿼리이
 
 무지성으로 달아주었던 TX 어노테이션으로 인해 발생한 set_option 쿼리들이 알게 모르게 성능에 영향을 끼치고 있었던 것이다.
 
-그럼 여기서 Transaction과 관련하여 JPA의 **OSIV**에 대해 알아보자.
+![image](https://github.com/user-attachments/assets/70cb9fe8-9f06-439d-9800-b54951766620)
+
+단순 조회 메소드에 @Transactional을 사용하면 위와 같이 select 쿼리 1개를 위해 6개의 쿼리가 더 발생한다.
+
+트랜잭션을 적절히 사용하기 위해 우선 JPA의 **OSIV**에 대해 알아보자.
 
 ## OSIV(Open Session In View)
 
