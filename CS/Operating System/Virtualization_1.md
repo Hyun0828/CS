@@ -1,5 +1,23 @@
 # Virtualization_1
 
+# 목차
+- [Processes](#Processes)
+- [Limited Direct Execution](#Limited-Direct-Execution)
+  - [제한된 연산](#제한된-연산)
+  - [프로세스-간-전환](#프로세스-간-전환)
+- [Scheduling](#Scheduling)
+  - [선입선출(First In First Out)](#선입선출-first-in-first-out-fifo)
+  - [최단 작업 우선(Shortest Job First, SJF)](#최단-작업-우선-shortest-job-first-sjf)
+  - [최단 잔여시간 우선 (Shortest Time-to-Completion First, STCF or PSJF)](#최단-잔여시간-우선-shortest-time-to-completion-first-stcf-or-psjf)
+  - [응답 시간](#응답-시간)
+  - [라운드 로빈(Round-Robin, RR)](#라운드-로빈-round-robin-rr)
+  - [입출력을 고려한 스케줄링](#입출력을-고려한-스케줄링)
+- [Multi-level Feedback Queue](#Multi-level-Feedback-Queue)
+  - [MLFQ](#MLFQ)
+  - [MLFQ-조정](#MLFQ-조정)
+  - [MLFQ-요약](#MLFQ-요약)
+
+
 ## 4. Processes
 
 일반적으로 프로세스는 실행 중인 프로그램으로 정의한다. 프로세스의 구성 요소를 이해하기 위해서는 하드웨어 상태(machine state)를 이해해야 한다. 
