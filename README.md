@@ -4,7 +4,7 @@
 
 - Chapter 1. CS 지식
   - 네트워크
-  - 운영체제
+  - 운영체제 (Operating Systems : Three Easy Pieces)
     - [Virtualization_1](https://github.com/Hyun0828/CS/blob/main/CS/Operating%20System/Virtualization_1.md) 
   - 데이터베이스
   - 컴퓨터구조
