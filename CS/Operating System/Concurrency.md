@@ -15,7 +15,11 @@
   - [Fetch-And-Add](#fetch-and-add)
   - [과도한 스핀](#과도한-스핀)
   - [무조건 양보!](#무조건-양보)
-  - [잠자기](#잠자기) 
+  - [잠자기](#잠자기)
+- [Condition Variables](#30-condition-variables)
+  - [컨디션 변수](#컨디션-변수)
+  - [생산자/소비자 (유한 버퍼) 문제](#생산자소비자-유한-버퍼-문제)
+  - [컨디션 변수 주의점](#컨디션-변수-주의점) 
 
 ## 26. Concurrency and Threads
 
@@ -292,4 +296,255 @@ m->guard=0;
 
 바뀐 부분은 위와 같다.
 
+## 30. Condition Variables
 
+‘락’만으로는 제대로된 병행 프로그램을 작성할 수 없다. 쓰레드가 계속 진행하기 전에 어떤 조건이 참인지를 검사해야 하는 경우가 많이 있다. 대표적으로 join()이 있다. 공유 변수를 두어 join을 구현하게 되면 while문을 통해 스핀 락처럼 계속 회전하며 CPU 사이클을 낭비하게 되어 다른 방법이 필요하다.
+
+```c
+volatile int done = 0;
+
+void *child(void *arg){
+	printf("child\n");
+	done = 1;
+	return NULL;
+}
+
+int main(int argc, char *argv[]){
+	printf("parent : begin\n");
+	pthread_t c;
+	Pthread_create(&c, NULL, child, NULL);
+	while(done==0) ;
+	printf("parent: end\n");
+	return 0;
+}
+```
+
+### 컨디션 변수
+
+컨디션 변수는 일종의 큐로서 어떤 조건이 만족될 때까지 기다리며 쓰레드가 대기할 수 있는 큐이다. 다른 쓰레드가 상태를 변경 시켰을 때 대기 중이던 쓰레드를 깨우고 계속 진행할 수 있게 만든다. 컨디션 변수에는 wait()과 signal() 연산이 있는데 wait()는 호출 쓰레드를 잠재우고 signal()은 대기 중인 쓰레드를 깨운다. 이 때 주의할 점은 wait() 연산 시 mutex를 매개변수로 사용한다는 것이다.
+
+wait()으로 쓰레드가 잠들 때 들고 있는 락을 해제한다. 또한 **대기 상태의 쓰레드가 깨어나면 wait()를 리턴하기 전에 락을 재획득해야 한다.** 이렇게 구성된 이유는 경쟁 조건의 발생을 방지하기 위함이다.
+
+ 
+
+```c
+int done = 0;
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t c = PTHREAD_COND_INITIALIZER;
+
+void thr_exit() {
+	Pthread_mutex_lock(&m);
+	done = 1;
+	Pthread_cond_signal(&c);
+	Pthread_mutex_unlock(&m);
+}
+
+void *child(void *arg) {
+	printf(“child\n ”);
+	thr_exit();
+	return NULL;
+}
+
+void thr_join() {
+	Pthread_mutex_lock(&m);
+	while (done == 0)
+		Pthread_cond_wait(&c, &m);
+	Pthread_mutex_unlock(&m);
+}
+
+int main(int argc, char *argv[]) {
+	printf(“parent: begin\n ”);
+	pthread_t p;
+	Pthread_create(&p, NULL, child, NULL);
+	thr_join();
+	printf(“parent: end\n ”);
+	return 0;
+}
+```
+
+위의 코드에서 2가지 경우가 발생한다.
+
+1. 부모 쓰레드에서 join을 먼저 실행하는 경우에는 부모 쓰레드가 먼저 잠들고 자식 쓰레드가 done을 1로 바꾸면서 부모 쓰레드를 깨운다. 
+2. 자식 쓰레드가 먼저 done을 1로 바꾸고 깨우는데 대기하는 쓰레드가 없다. 이후 부모 쓰레드가 Join을 실행하면 바로 리턴한다.
+
+여기서 중요한 사실은 **join에서 조건을 검사할 때 꼭 if문이 아닌 while문을 사용해야 한다는 것이다.** 이유는 나중에 다시 생각해보자.
+
+위의 코드에서 done 이라는 상태 변수나 mutex_lock 둘 중 어느 하나라도 사용하지 않으면 코드가 정상 동작하지 않는다.
+
+### 생산자/소비자 (유한 버퍼) 문제
+
+흔히 **Producer/Consumer** 문제라고도 부른다. 생산자는 데이터를 만들어 버퍼에 넣고 소비자는 버퍼에서 데이터를 꺼내 사용한다. 웹 서버의 경우에도 HTTP 요청을 작업 큐에 넣고 소비자 쓰레드가 큐에서 요청을 꺼내 처리한다. 이 유한 버퍼는 공유 자원이기 때문에 경쟁 조건 발생을 막기 위해서는 동기화가 필요하다. 버퍼를 간단한 값이라고 생각하고 예제를 보자.
+
+```c
+int buffer;
+int count = 0;
+
+void put(int value){
+	assert(count==0);
+	count=1;
+	buffer=value;
+}
+
+int get(){
+	assert(count==1);
+	count=0;
+	return buffer;
+}
+```
+
+간단히 put은 버퍼가 비어있으면 값을 넣고 count를 1로 바꾼다. get은 버퍼에 값이 있으면 count를 0으로 만들고 버퍼 값을 리턴한다. 이 말은 즉 버퍼가 꽉 차있을 때 데이터를 넣어선 안 되며 비어있을 때 값을 꺼내서도 안 된다.
+
+우선 생산자와 소비자 쓰레드가 1개씩 존재한다고 가정해보자. 버퍼 접근 자체가 임계 영역이므로 락의 추가와 상태 변수를 같이 사용해야 한다.
+
+```c
+cond_t cond;
+mutex_t mutex;
+
+void *producer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		Pthread_mutex_lock(&mutex); // p1
+		if (count == 1) // p2
+			Pthread_cond_wait(&cond, &mutex); // p3
+		put(i); // p4
+		Pthread_cond_signal(&cond); // p5
+		Pthread_mutex_unlock(&mutex); // p6
+	}
+}
+
+void *consumer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		Pthread_mutex_lock(&mutex); // c1
+		if (count == 0) // c2
+			Pthread_cond_wait(&cond, &mutex); // c3
+		int tmp = get(); // c4
+		Pthread_cond_signal(&cond); // c5
+		Pthread_mutex_unlock(&mutex); // c6
+		printf(“%d\n ”, tmp);
+	}
+}
+```
+
+생산자와 소비자가 1개면 위의 코드는 정상 동작한다. **그러나 쓰레드가 여러개면 무슨 문제가 생길까?**
+
+**첫 번째 문제점은 if 문과 관련이 있다.** 예를 들어 생산자가 1, 소비자가 2개라고 하자. 소비자1가 먼저 실행되면 대기상태로 전환되고 생산자1이 실행되면 소비자1을 깨우면서 버퍼에 데이터를 넣는다. 이 때 소비자1은 준비 상태로 전환되는데 소비자2가 먼저 실행되면 소비자2가 버퍼에서 데이터를 꺼내 사용한다. 이후 소비자1이 실행되면 wait 이후 코드를 실행하게 되는데 버퍼는 비워져 있기 때문에 get()을 할 수가 없다.
+
+즉, 깨어난 쓰레드가 실제 실행되는 시점에도 그 상태가 유지된다는 보장이 없는데 이런 식의 시그널 정의를 **Mesa semantic** 이라고 한다. 반대로 깨어난 즉시 쓰레드가 실행되는 개념이 Hoare semantic 이지만 구현이 어려워 전자가 사용되고 있다.
+
+즉 앞서 말한 것처럼 조건문에는 If문이 아니라 while문을 사용하면 문제를 해결할 수 있다. while문이면 소비자1이 깨어나도 조건을 다시 확인하기 때문에 잠들어 문제가 발생하지 않는다. **컨디션 변수에는 반드시 while문을 사용하도록 하자.** 그러나 아직도 문제가 있다. 
+
+```c
+cond_t cond;
+mutex_t mutex;
+
+void *producer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		Pthread_mutex_lock(&mutex); // p1
+		while (count == 1) // p2
+			Pthread_cond_wait(&cond, &mutex); // p3
+		put(i); // p4
+		Pthread_cond_signal(&cond); // p5
+		Pthread_mutex_unlock(&mutex); // p6
+	}
+}
+
+void *consumer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		Pthread_mutex_lock(&mutex); // c1
+		while (count == 0) // c2
+			Pthread_cond_wait(&cond, &mutex); // c3
+		int tmp = get(); // c4
+		Pthread_cond_signal(&cond); // c5
+		Pthread_mutex_unlock(&mutex); // c6
+		printf(“%d\n ”, tmp);
+	}
+}
+```
+
+**두 번째 문제는 컨디션 변수의 개수가 1개라는 점이다.** 이전과 달리 소비자 쓰레드 2개가 먼저 실행된다고 하자. 소비자 쓰레드 2개는 잠들고 생산자 쓰레드가 실행되면서 소비자 쓰레드 중 1개를 깨운다. 소비자1이 깨어나면서 버퍼에서 값을 꺼낸다. 이후 시그널을 통해 소비자2나 생산자1 중 하나를 깨우는데 만약에 소비자2를 깨우면 모든 쓰레드가 잠들게 되어 깨워줄 쓰레드가 없어진다. 그래서 우리는 컨디션 변수를 1개 더 만들어 생산자는 소비자를, 소비자는 생산자만을 깨울 수 있게 만든다.
+
+```c
+cond_t empty, fill;
+mutex_t mutex;
+
+void *producer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		Pthread_mutex_lock(&mutex); // p1
+		while (count == 1) // p2
+			Pthread_cond_wait(&empty, &mutex); // p3
+		put(i); // p4
+		Pthread_cond_signal(&fill); // p5
+		Pthread_mutex_unlock(&mutex); // p6
+	}
+}
+
+void *consumer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		Pthread_mutex_lock(&mutex); // c1
+		while (count == 0) // c2
+			Pthread_cond_wait(&fill, &mutex); // c3
+		int tmp = get(); // c4
+		Pthread_cond_signal(&empty); // c5
+		Pthread_mutex_unlock(&mutex); // c6
+		printf(“%d\n ”, tmp);
+	}
+}
+```
+
+그러나 우리가 변경해야 할 점이 하나 더 있다. 병행성을 증가시키는 것인데 버퍼 공간을 추가하여 대기 상태에 들어가기 전에 여러 값들이 생산될 수 있게, 소비될 수 있게 하는 것이다. 
+
+```c
+int buffer[MAX];
+int fill = 0;
+int use = 0;
+int count = 0;
+
+void put(int value){
+	buffer[fill] = value;
+	fill = (fill + 1) % MAX;
+	count++;
+}
+
+int get(){
+	int tmp = buffer[use];
+	use = (use + 1) % MAX;
+	count--;
+	return tmp;
+}
+```
+
+그냥 버퍼 크기를 늘리고, 버퍼가 꽉 차면 생산자가 잠들고 버퍼가 비어있으면 소비자가 잠든다.
+
+### 컨디션 변수 주의점
+
+이전에 이야기 했던 것처럼 조건문을 사용할 때는 반드시 if문이 아닌 while문을 사용해야 한다. 쓰레드를 잘못 깨운 경우를 대비하기 위함이다. 또한 멀티 쓰레드 기반 메모리 할당 예제에서도 이 이슈가 등장한다. 메모리 할당 시 여유 공간이 생길 때까지 대기하고 쓰레드가 메모리 반납 시 시그널을 생성해 쓰레드를 깨우는데 이 때 어떤 쓰레드를 깨워야 할까?
+
+```c
+int bytesLeft = MAX_HEAP_SIZE;
+cond_t c;
+mutex_t m;
+
+void *allocate(int size) {
+	Pthread_mutex_lock(&m);
+	while (bytesLeft < size)
+		Pthread_cond_wait(&c, &m);
+	void *ptr = . . . ; 
+	bytesLeft −= size;
+	Pthread_mutex_unlock(&m);
+	return ptr;
+}
+
+void free(void *ptr, int size) {
+	Pthread_mutex_lock(&m);
+	bytesLeft += size;
+	Pthread_cond_signal(&c); 
+	Pthread_mutex_unlock(&m);
+}
+```
+
+쓰레드a가 100바이트 공간을 대기, 쓰레드b가 10바이트 공간을 대기할 때 쓰레드c가 50바이트 공간을 반납하면 우리는 쓰레드b를 깨워야 한다. 그러나 어떤 쓰레드를 깨워야할 지 모르기 때문에 **pthread_cond_broadcast()를 통해 모든 쓰레드를 다 깨우는 방법을 선택한다.** 물론 성능에 안 좋은 영향을 끼칠 수도 있다. 더 좋은 해법이 있다면 그 방법을 선택하면 된다. 이전에는 컨디션 변수를 하나 더 두어 문제를 해결한 케이스다.
