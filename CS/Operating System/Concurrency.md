@@ -19,7 +19,15 @@
 - [Condition Variables](#30-condition-variables)
   - [컨디션 변수](#컨디션-변수)
   - [생산자/소비자 (유한 버퍼) 문제](#생산자소비자-유한-버퍼-문제)
-  - [컨디션 변수 주의점](#컨디션-변수-주의점) 
+  - [컨디션 변수 주의점](#컨디션-변수-주의점)
+- [Semaphores](#31-semaphores)
+  - [세마포어](#세마포어)
+  - [이진 세마포어](#이진-세마포어)
+  - [컨디션 변수로서의 세마포어](#컨디션-변수로서의-세마포어)
+  - [생산자/소비자 문제](#생산자소비자-문제)
+  - [Reader-Writer 락](#reader-writer-락)
+  - [식사하는 철학자](#식사하는-철학자)
+  - [세마포어 구현](#세마포어-구현) 
 
 ## 26. Concurrency and Threads
 
@@ -548,3 +556,299 @@ void free(void *ptr, int size) {
 ```
 
 쓰레드a가 100바이트 공간을 대기, 쓰레드b가 10바이트 공간을 대기할 때 쓰레드c가 50바이트 공간을 반납하면 우리는 쓰레드b를 깨워야 한다. 그러나 어떤 쓰레드를 깨워야할 지 모르기 때문에 **pthread_cond_broadcast()를 통해 모든 쓰레드를 다 깨우는 방법을 선택한다.** 물론 성능에 안 좋은 영향을 끼칠 수도 있다. 더 좋은 해법이 있다면 그 방법을 선택하면 된다. 이전에는 컨디션 변수를 하나 더 두어 문제를 해결한 케이스다.
+
+## 31. Semaphores
+
+다양한 범주의 병행성 문제 해결을 위해서는 락과 컨디션 변수가 둘다 필요한데 이를 대신할 수 있는 동기화 방법으로 세마포어가 있다.
+
+### 세마포어
+
+세마포어는 정수 값을 갖는 객체로서 sem_wait()와 sem_post()로 조작할 수 있다. 세마포어 초기값을 두고 wait()는 세마포어 값이 1 이상이면 즉시 리턴하지만 0 이하면 값이 1 이상이 될 때까지 스레드를 대기시킨다. post()는 값을 증가시키고 대기중인 쓰레드 중 하나를 깨운다. 세마포어 값이 음수라면 현재 대기 중인 쓰레드 개수와 같은데 사실 세마포어 사용자(쓰레드)는 이 값을 모른다.
+
+생각해보면 **세마포어 값을 변경할 때도 경쟁 조건이 발생할 수 있을 것 같다.** 이를 어떻게 해결하는 지도 생각해보자.
+
+### 이진 세마포어
+
+```c
+sem_t m;
+sem_init(&m, 0, X);
+sem_wait(&m);
+<critical section>
+sem_post(&m);
+```
+
+세마포어를 mutex lock처럼 사용할 수 있다. 이 때 위의 코드에서 X는 1이면 된다. 만약 이미 락을 보유하고 있는 쓰레드가 있을 때 임계 영역이 진입하려고 하면 세마포어 값이 -1이 되며 대기하게 된다. 이렇게 초기 값을 1로 두면 세마포어를 락으로 사용할 수 있다. 락은 2개의 상태 (사용 가능, 사용 중)만 존재하므로 이를 **이진 세마포어** 라고도 부른다.
+
+### 컨디션 변수로서의 세마포어
+
+세마포어는 컨디션 변수로서도 사용될 수 있다. 
+
+```c
+sem_t s;
+
+void *child(void *arg) {
+	printf(“child\n ”);
+	sem_post(&s); 
+	return NULL;
+}
+
+int main(int argc, char *argv[]) {
+	sem_init(&s, 0, X);
+	printf(“parent: begin\n ”);
+	pthread_t c;
+	Pthread_create(c, NULL, child, NULL);
+	sem_wait(&s); 
+	printf(“parent: end\n ”);
+	return 0;
+}
+```
+
+간단하게 세마포어를 0으로 초기화 하면 컨디션 변수처럼 사용할 수 있다.
+
+### 생산자/소비자 문제
+
+Producer/Consumer 문제로 세마포어로 해결할 수 있다.
+
+```c
+int buffer[MAX];
+int fill = 0;
+int use = 0;
+
+void put(int value) {
+	buffer[fill] = value; 
+	fill = (fill + 1) % MAX;
+}
+
+int get() {
+	int tmp = buffer[use]; 
+	use = (use + 1) % MAX; 
+	return tmp;
+}
+```
+
+```c
+sem_t empty;
+sem_t full;
+
+void *producer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		sem_wait(&empty); 
+		put(i); 
+		sem_post(&full); 
+	}
+}
+
+void *consumer(void *arg) {
+	int i, tmp = 0;
+	while (tmp != −1) {
+		sem_wait(&full); 
+		tmp = get(); 
+		em_post(&empty); 
+		printf(“%d\n ”, tmp);
+	}
+}
+
+int main(int argc, char *argv[]) {
+	sem_init(&empty, 0, MAX); 
+	sem_init(&full, 0, 0); 
+}
+```
+
+위와 같이 구현하면 생산자와 소비자 쓰레드가 여러 개일 때 put, get에서 경쟁 조건이 발생한다. **fill 값에 대한 경쟁 조건이 발생하게 된다.** **그래서 우리는 상호 배제를 구현해야 한다.**
+
+```c
+sem_t empty;
+sem_t full;
+sem_t mutex;
+
+void *producer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		sem_wait(&mutex);
+		sem_wait(&empty); 
+		put(i); 
+		sem_post(&full); 
+		sem_post(&mutex);
+	}
+}
+
+void *consumer(void *arg) {
+	int i, tmp = 0;
+	while (tmp != −1) {
+	  sem_wait(&mutex);
+		sem_wait(&full); 
+		tmp = get(); 
+		sem_post(&empty); 
+		sem_post(&mutex);
+		printf(“%d\n ”, tmp);
+	}
+}
+
+int main(int argc, char *argv[]) {
+	sem_init(&empty, 0, MAX); 
+	sem_init(&full, 0, 0); 
+	sem_init(&mutex, 0, 1);
+}
+```
+
+그래서 이진 세마포어를 하나 추가했다. 그런데 위의 코드는 **데드락이 발생한다.** 왜 그럴까?
+
+소비자1이 먼저 실행되면 소비자1은 락을 획득하고 full 변수에 대해 wait()을 호출해 대기한다. 이후 생산자1이 실행되면 소비자1이 이미 락을 획득한 상태기 때문에 생산자1도 대기하게 되어 서로가 서로를 기다리는 데드락 상황이 발생하게 된다. 
+
+이를 해결하기 위해서는 락의 범위를 줄이면 된다. mutex 락을 이용한 임계 영역의 범위를 put, get으로 한정하자.
+
+```c
+void *producer(void *arg) {
+	int i;
+	for (i = 0; i < loops; i++) {
+		sem_wait(&empty); 
+		sem_wait(&mutex);
+		put(i); 
+		sem_post(&mutex);
+		sem_post(&full); 
+	}
+}
+
+void *consumer(void *arg) {
+	int i, tmp = 0;
+	while (tmp != −1) {
+		sem_wait(&full); 
+	  sem_wait(&mutex);
+		tmp = get(); 
+		sem_post(&mutex);
+		sem_post(&empty); 
+		printf(“%d\n ”, tmp);
+	}
+}
+```
+
+이는 멀티 쓰레드 프로그램에서도 잘 동작한다.
+
+### Reader-Writer 락
+
+예를 들어 리스트에 대한 삽입 연산, 검색 연산이 있을 때 삽입 연산이 없다는 보장만 된다면 다수의 검색 작업은 동시에 이루어져도 상관이 없다. 이렇게 좀 더 융통성 있는 락 기법에 대해 알아보자.
+
+```c
+typedef struct _rwlock_t {
+    sem_t lock;         // readers 카운트를 보호하는 세마포어
+    sem_t writelock;    // writer 접근을 조정하는 세마포어
+    int readers;        // 현재 읽고 있는 reader 수
+} rwlock_t;
+
+void rwlock_init(rwlock_t *rw) {
+    rw->readers = 0;
+    sem_init(&rw->lock, 0, 1);
+    sem_init(&rw->writelock, 0, 1);
+}
+
+void rwlock_acquire_readlock(rwlock_t *rw) {
+    sem_wait(&rw->lock);
+    rw->readers++;
+    if (rw->readers == 1)
+        sem_wait(&rw->writelock); // 첫 번째 reader가 writelock을 잡음
+    sem_post(&rw->lock);
+}
+
+void rwlock_release_readlock(rwlock_t *rw) {
+    sem_wait(&rw->lock);
+    rw->readers--;
+    if (rw->readers == 0)
+        sem_post(&rw->writelock); // 마지막 reader가 writelock을 풀어줌
+    sem_post(&rw->lock);
+}
+
+void rwlock_acquire_writelock(rwlock_t *rw) {
+    sem_wait(&rw->writelock);
+}
+
+void rwlock_release_writelock(rwlock_t *rw) {
+    sem_post(&rw->writelock);
+}
+```
+
+쓰기 락인 write lock을 보면 하나의 쓰기 쓰레드만이 락을 획득할 수 있도록 한다. 반면에 읽기 락인 read lock을 보면 데이터/자료구조를 읽는 최초의 읽기 쓰레드가 쓰기 락을 같이 획득한다. 따라서 읽기 쓰레드가 존재하면 쓰기 쓰레드가 임계 영역에 접근할 수 없게 된다.
+
+이 방식은 쓰기 쓰레드에게 기아 현상이 발생할 수 있어서 쓰기 쓰레드가 대기 중일 때는 읽기 쓰레드가 락을 획득하지 못하게 만드는 방법도 있다.
+
+### 식사하는 철학자
+
+<img width="258" alt="image (7)" src="https://github.com/user-attachments/assets/55d5e843-ce9e-473d-be5a-ea3162d8967f" />
+
+면접에서 자주 등장한 식사하는 철학자 문제이다. 철학자는 식사하기 위해서는 자신의 왼쪽과 오른쪽에 있는 포크를 들어야 식사를 할 수 있다. 이 포크를 잡기 위한 경쟁과 그에 따른 동기화 문제를 생각해보자. 데드락 발생을 막아야 하며 최대한 많은 철학자가 동시에 식사를 할 수 있어야 한다.
+
+각 철학자의 기본 동작 코드는 다음과 같다.
+
+```c
+while(1){
+	think();
+	getforks();
+	eat();
+	putforks();
+}
+```
+
+우선 철학자가 왼쪽 포크를 먼저 잡고 오른쪽 포크를 잡는다고 해보자. 각 포크마다 1개씩, 총 5개의 세마포어가 있다고 하자.
+
+```c
+void getforks(){
+	sem_wait(forks[left(p)]);
+	sem_wait(forks[right(p)]);
+}
+
+void putforks(){
+	sem_post(forks[left(p)]);
+	sem_post(forks[right(p)]);
+}
+```
+
+이렇게 하면 데드락이 발생한다. 예를 들어 철학자0은 포크0을 잡고, 철학자 1은 포크 1을 잡고.. 철학자4는 포크4를 잡는다. 이 때 모든 포크는 누군가가 잡고 있기 때문에 모든 철학자는 다른 철학자가 포크를 내려 놓기를 기다리며 대기하기 때문이다.
+
+이 문제를 해결하는 간단한 방법은 가장 높은 순번의 철학자가 오른쪽 포크를 먼저 획득하는 것이다.
+
+```c
+void getforks(){
+	if(p==4){
+		sem_wait(forks[right(p)]);
+		sem_wait(forks[left(p)]);
+	} else {
+		sem_wait(forks[left(p)]);
+		sem_wait(forks[right(p)]);
+	}
+}
+```
+
+### 세마포어 구현
+
+```c
+typedef struct {
+    int value;
+    pthread_cond_t cond;
+    pthread_mutex_t lock;
+} Zem_t;
+
+void Zem_init(Zem_t *s, int value) {
+    s->value = value;
+    pthread_cond_init(&s->cond, NULL);
+    pthread_mutex_init(&s->lock, NULL);
+}
+
+void Zem_wait(Zem_t *s) {
+    pthread_mutex_lock(&s->lock);
+    while (s->value <= 0)
+        pthread_cond_wait(&s->cond, &s->lock);
+    s->value--;
+    pthread_mutex_unlock(&s->lock);
+}
+
+void Zem_post(Zem_t *s) {
+    pthread_mutex_lock(&s->lock);
+    s->value++;
+    pthread_cond_signal(&s->cond);
+    pthread_mutex_unlock(&s->lock);
+}
+```
+
+**락과 컨디션 변수를 이용해 구현한 세마포어다.** 위 구현에서는 세마포어 값이 0보다 작아질 수가 없는데 이 방식이 구현하기 쉽고 실제 Linux에 구현된 세마포어 방식이다. Java의 Semaphore class에서는 ReentrantLock과 Condition을 내부적으로 사용해 동기화 작업을 처리한다. 물론 이를 고수준 API로 감싸 개발자가 직접 저수준 락과 컨디션 변수를 만질 일은 없다.
+
+앞서 배운 세마포어를 사용하여 락과 컨디션 변수를 구현하는 것은 현실에선 굉장히 어려운 문제라고 한다.
