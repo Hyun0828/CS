@@ -1,5 +1,5 @@
 # 목차
-- [I/O Devices](#36-i/o-devices)
+- [I/O Devices](#36-io-devices)
   - [표준 장치](#표준-장치)
   - [표준 방식](#표준-방식)
   - [하드웨어 인터럽트](#하드웨어-인터럽트)
@@ -25,6 +25,21 @@
   - [RAID 5](#raid-5)
   - [RAID 6](#raid-6)
   - [RAID 비교](#raid-비교)
+- [Files and Directories](#40-files-and-directories)
+  - [파일과 디렉터리](#파일과-디렉터리)
+  - [파일의 생성](#파일의-생성)
+  - [파일의 읽기와 쓰기](#파일의-읽기와-쓰기)
+  - [비 순차적 읽기와 쓰기](#비-순차적-읽기와-쓰기)
+  - [즉시 기록](#즉시-기록)
+  - [파일 이름 변경](#파일-이름-변경)
+  - [파일 정보 추출](#파일-정보-추출)
+  - [파일 삭제](#파일-삭제)
+  - [디렉터리 생성](#디렉터리-생성)
+  - [디렉터리 읽기](#디렉터리-읽기)
+  - [디렉터리 삭제](#디렉터리-삭제)
+  - [하드 링크](#하드-링크)
+  - [심볼릭 링크](#심볼릭-링크)
+  - [마운트](#마운트)
     
 # Persistence
 
@@ -274,3 +289,225 @@ RAID-5와 기본적으로 같지만 서로 다른 2개의 패리티 블럭을 �
 ---
 
 책에서 순차, 랜덤 워크로드 별로 대역폭 설명을 해줬는데 솔직히 음… 이해가 잘 안 간다. 각 기법의 특징까진 이해하긴 했다.
+
+## 40. Files and Directories
+
+### 파일과 디렉터리
+
+파일은 단순히 읽거나 쓸 수 있는 순차적인 바이트의 배열이다. 각 파일은 저수준의 이름을 갖고 있는데 이를 **아이노드 번호**라고 하며 사용자는 알 수 없다. 디렉터리도 파일과 마찬가지로 아이노드 번호를 갖는다. 하지만 파일과는 달리 디렉터리는 <사용자가 읽을 수 있는 이름, 저수준의 이름> 쌍으로 이루어진 목록을 갖는다. 즉 디렉터리 내에 다른 디렉터리와 파일들의 목록 리스트를 갖고 있다고 생각하면 된다. 이를 통해 디렉터리 트리를 구성할 수 있다.
+
+![image](https://github.com/user-attachments/assets/b4bc411a-a69d-41ed-9adb-e4ccc797dce0)
+
+위와 같이 디렉터리 트리/계층은 루트 디렉터리 ‘/’로 부터 시작하여 구분자를 사용해 하위 디렉터리를 명시할 수 있다. 파일은 파일 이름과 확장자로 이루어져 있는데 확장자가 .c라고 해서 반드시 c 소스 코드일 필요는 없다. 
+
+이제 파일, 디렉터리와 관련한 시스템 콜을 살펴보자
+
+### 파일의 생성
+
+파일의 생성은 open 시스템 콜을 사용한다. 
+
+```c
+int fd = open("foo", O_CREAT | O_WRONLY | O_TRUNC);
+```
+
+- O_CREATE : 파일 생성 플래그
+- O_WRONLY : 파일이 열렸을 때 쓰기만 가능한 플래그
+- O_TRUNC : 기존 내용을 삭제하는 플래그
+
+open의 중요한 부분은 리턴 값인데 이를 **파일 디스크립터(File Descriptor)** 라고 한다. 파일 디스크립터는 UNIX 시스템에서 파일 접근에 사용되며 해당 파일에 대한 특정 동작의 수행 자격을 부여하는 핸들이다. 
+
+### 파일의 읽기와 쓰기
+
+```bash
+prompt > echo hello > foo
+prompt > cat foo
+hello
+prompt > 
+```
+
+foo 라는 파일에 hello를 출력하고 cat으로 파일 내용을 확인했다. 어떤 시스템 콜이 호출되는 지는 Linux의 strace를 사용하면 된다.
+
+```bash
+prompt> strace cat foo
+. . .
+open(“foo ”, O_RDONLY|O_LARGEFILE) = 3
+read(3,“hello\n ”, 4096) = 6
+write(1,“hello\n ”, 6) = 6
+hello
+read(3,“ ”, 4096) = 0
+close(3) = 0
+. . .
+prompt>
+```
+
+open을 통해 파일을 열고 리턴된 파일 디스크립터를 read 시스템 콜에서 사용한다. **이 때 open의 리턴 값이 3인 이유가 뭘까?** **기본적으로 표준 입력, 표준 출력, 표준 에러의 파일 디스크립터 값이 0,1,2 이기 때문이다.** 어쨌든 파일을 열고 read 시스템 콜을 통해 파일에서 몇 바이트씩 읽어온다. write에는 파일 디스크립터 값을 1로 두어 표준 출력을 진행한다. 출력 후 더 읽을 게 없으면 close가 호출된다.
+
+### 비 순차적 읽기와 쓰기
+
+파일의 특정 부분만 읽고 싶을 수도 있다. 이 때 lseek() 시스템 콜을 사용한다.
+
+```c
+off_t lseek(int fildes, off_t offset, int whence);
+```
+
+첫 인자는 파일 디스크립터이며 whence 플래그에 따라 파일 읽는 위치가 달라진다.
+
+- SEEK_SET : 오프셋은 offset 바이트로 설정된다.
+- SEEK_CUR : 오프셋은 현재 위치 + offset으로 설정된다.
+- SEEK_END : 오프셋은 파일의 크기 + offset으로 설정된다.
+
+### 즉시 기록
+
+디스크 접근은 상당히 느리기 때문에 write() 시스템 콜이 호출되더라도 즉시 기록되지 않으며 버퍼링 과정이 존재한다. 그런데 디스크에 버퍼 내용이 기록되기 전에 문제가 생기면 데이터가 유실될 수 있다. 따라서 DB에서의 Flush 처럼 즉시 디스크에 기록할 수 있는 시스템 콜이 필요한데 이것이 **fsync(int fd)** 이다. fsync를 호출하면 특정 파일 디스크립터에 대한 모든 더티가 즉시 디스크에 기록된다.
+
+여기서 주의할 점은 파일이 존재하는 디렉터리도 fsync()를 해주어야 한다는 것이다.
+
+### 파일 이름 변경
+
+우리는 mv 명령으로 파일 이름을 변경할 수 있고 rename(char *old, char *new) 시스템 콜을 호출한다. rename은 원자성을 보장받는 다는 것이 특징이다. 예시를 보자.
+
+```c
+int fd = open(“foo.txt.tmp ”, O_WRONLY|O_CREAT|O_TRUNC);
+write(fd, buffer, size); // 파일᮹ ᔩಽᬕ ქᱥᮥ ᥑʑ
+fsync(fd);
+close(fd);
+rename(“foo.txt.tmp ”, “foo.txt ”);
+```
+
+위와 같이 임시 파일에 데이터를 쓰고 rename을 호출하면 이전 버전의 파일을 삭제하고 동시에 새로운 파일로 교체하는 작업이 원자적으로 이루어진다.
+
+### 파일 정보 추출
+
+파일에 대한 정보를 메타데이터 라고 하는데 이 메타데이터를 보려면 **stat(), fstat()** 시스템 콜을 호출한다. 
+
+```c
+struct stat {
+	dev_t st_dev; /* ID of device containing file */
+	ino_t st_ino; /* inode number */
+	mode_t st_mode; /* protection */
+	nlink_t st_nlink; /* number of hard links */
+	uid_t st_uid; /* user ID of owner */
+	gid_t st_gid; /* group ID of owner */
+	dev_t st_rdev; /* device ID (if special file) */
+	off_t st_size; /* total size, in bytes */
+	blksize_t st_blksize; /* blocksize for filesystem I/O */
+	blkcnt_t st_blocks; /* number of blocks allocated */
+	time_t st_atime; /* time of last access */
+	time_t st_mtime; /* time of last modification */
+	time_t st_ctime; /* time of last status change */
+};
+```
+
+메타데이터는 아이노드 번호, 접근 시간, 변경 시간 등을 저장하고 있다. 일반적으로 파일 시스템은 아이노드에 메타데이터를 보관한다. **즉 아이노드는 파일의 메타데이터를 저장하는 디스크 자료구조라고 보면 된다.**
+
+### 파일 삭제
+
+파일 삭제 명령어인 rm은 unlink() 시스템 콜을 호출하는데 우선 디렉터리 관련 시스템 콜을 이해해보자.
+
+### 디렉터리 생성
+
+디렉터리 생성을 위한 시스템 콜은 **mkdir()**이다. 처음 디렉터리가 생성되면 빈 상태이지만 실제로는 자신을 나타내기 위한 항목인 ‘.’과 자신의 부모 디렉터리를 가리키는 ‘..’이 존재한다.
+
+### 디렉터리 읽기
+
+디렉터리 읽기는 **opendir(), readdir(), closedir()** 시스템 콜을 호출한다. 
+
+```c
+int main(int argc, char *argv[]) {
+	DIR *dp = opendir(“ . ”);
+	assert(dp != NULL);
+	struct dirent *d;
+	while ((d = readdir(dp)) != NULL) {
+		printf(“%d %s\n ”, (int) d−>d_ino, d−>d_name);
+	}
+	closedir(dp);
+	return 0;
+}
+```
+
+struct dirent 자료구조는 각 디렉터리 항목에 저장된 정보를 보여준다. 즉 위 코드는 현재 디렉터리에 포함된 디렉터리와 파일들의 아이노드와 이름을 출력한다. 애초에 디렉터리에는 파일과 달리 이름과 아이노드 번호 매핑 목록을 제외하면 많은 정보가 없다.
+
+### 디렉터리 삭제
+
+**rmdir()** 시스템 콜을 호출하여 디렉터리를 삭제할 수 있는데 디렉터리를 삭제하기 전에 비워야 한다. 비어있지 않은 디렉터리는 호출이 실패한다. 
+
+### 하드 링크
+
+그럼 이전에 파일 삭제시 왜 unlink() 시스템 콜이 호출 되었을까? 파일 시스템 트리에 항목을 추가하는 link() 시스템 콜을 알아보자. link()는 원래 파일에 접근할 수 있는 새로운 이름인 하드 링크를 생성한다. 
+
+```bash
+prompt> echo hello > file
+prompt> cat file
+hello
+prompt> ln file file2
+prompt> cat file2
+hello
+```
+
+file2 하드링크로 file에 접근이 가능해졌다. 이 말은 동일한 아이노드 번호에 대한 링크가 생성되었다는 것이다.
+
+```bash
+prompt> ls −i file file2
+67158084 file
+67158084 file2
+prompt>
+```
+
+파일을 생성할 때는 사실 2가지 작업을 한다. 하나는 파일 메타데이터를 저장할 아이노드를 만드는 것이며 두 번째는 해당 파일에 사람이 읽을 수 있는 이름을 연결하고 그 연결 정보를 디렉터리에 생성하는 것이다. 파일 삭제 시 unlink()를 호출하는데 위의 예제에서 file을 제거한다고 하더라도 file2를 이용해 접근할 수 있다.
+
+각 아이노드 번호에는 참조 횟수가 존재하는데 하드 링크가 생성되면 참조 횟수가 증가하며 파일이 삭제되거나 하드 링크가 삭제되면 참조 횟수가 줄어들어 0이 되면 파일이 실질적으로 삭제된다.
+
+### 심볼릭 링크
+
+심볼릭 링크는 소프트 링크라고도 부른다. 하드 링크는 디렉터리에 만들 수 없고 다른 디스크 파티션에 있는 파일에 대해서도 만들 수 없다는 제약이 있어 심볼릭 링크가 만들어지게 되었다. 심볼릭 링크는 기존 ln 명령어에 -s 플래그를 전달하면 된다.
+
+```bash
+prompt> echo hello > file
+prompt> ln −s file file2
+prompt> cat file2
+hello
+```
+
+표면적으로는 하드 링크와 유사하지만 사실 매우 다르다. 심볼릭 링크는 파일 시스템에서 파일, 디렉터리와 같이 다른 형식의 독립된 파일이다. 
+
+```bash
+prompt> stat file
+. . . regular file . . .
+prompt> stat file2
+. . . symbolic link . . .
+```
+
+심볼릭 링크는 연결하는 파일의 경로명을 저장한다. 파일의 경로명이 길수록 심볼릭 링크의 크기도 커진다. 그런데 이 심볼릭 링크는 **dangling reference** 문제가 발생할 수 있다. 
+
+```bash
+prompt> echo hello > file
+prompt> ln −s file file2
+prompt> cat file2
+hello
+prompt> rm file
+prompt> cat file2
+cat: file2: No such file or directory
+```
+
+하드 링크와 다르게 원본 파일을 삭제하면 심볼릭 링크가 가리키는 파일은 더 이상 존재하지 않게 된다.
+
+### 마운트
+
+다수의 파일 시스템이 존재할 때 이들을 묶어서 어떻게 큰 파일 디렉터리 트리를 구성할 수 있을까? 각각의 파일 시스템을 마운트하면 된다. 기본적으로 파일 시스템의 생성은 mkfs라는 도구를 사용한다. 장치명과 파일 시스템 타입을 전달하면 해당 파티션에 전달된 파일 시스템 형식으로 구성된 빈 파일 시스템을 생성한다. 이 파일 시스템은 자체적인 디렉터리 구조로 구성되어 있다. 
+
+이렇게 새롭게 생성된 파일 시스템을 루트 디렉터리에서 시작하는 기존의 디렉터리 구성을 통해 접근할 수 있도록 해주어야 하는데 mount() 시스템 콜을 사용하여 내부적으로 처리하고 있다. 간단하게 기존 디렉터리 중 하나를 마운트 지점으로 지정해 생성된 파일 시스템을 붙여 넣는다.
+
+예를 들어, 파티션 /dev/sda1에 EXT3 형식의 파일 시스템이 존재하고 루트 디렉터리 밑에 a, b의 2개 하위 디렉터리가 존재하며 각 디렉터리에는 foo 라는 파일이 하나 들어 있다. 이 파일 시스템을 /home/users 위치에 마운트해보자.
+
+```bash
+prompt> mount -t ext3 /dev/sda1 /home/users
+```
+
+마운트 작업이 성공하면 기존의 디렉터리 경로를 통해 접근할 수 있다.
+
+```bash
+prompt> ls /home/users/
+a b
+```
+
+마운트를 이용하면 모든 파일 시스템들을 하나의 트리 아래에 통합시킬 수 있다. 우리가 PC에 USB를 연결하면 USB 내의 디렉터리 및 파일들을 PC 디렉터리 경로를 통해 접근할 수 있는 것도 마운트 덕분이다.
